@@ -1,8 +1,197 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ffffff"><meta name="description" content="Photographs and little things to know about Earth. An unhurried, non-repeating slideshow."><title>Earth loading screen</title><script>try{const s=JSON.parse(localStorage.getItem('earth-in-passing-v1')||'{}');document.documentElement.dataset.theme=s.theme==='dark'||(!s.theme||s.theme==='system')&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}catch{}</script><link rel="stylesheet" href="style.css"><script src="assets/qrcode.js" defer></script><script src="app.js" defer></script></head>
-<body>
-<main id="main"><figure><div class="photograph"><img id="photo" alt=""></div><figcaption><div class="caption"><a id="read" target="_blank" rel="noopener"><span id="title"></span></a><span id="extract"></span><a id="credit" target="_blank" rel="noopener">Image & credits</a></div><a id="qr" target="_blank" rel="noopener" aria-label="Open this story's source" title="Scan to read the article"></a></figcaption></figure></main>
-<footer><span><button id="pause" aria-label="Pause">pause</button> · <button id="next" aria-label="Next discovery">next</button> · <button id="historyBtn">history (<span id="historyCount">0</span>)</button></span><span><button id="themeToggle" aria-label="Toggle dark mode" aria-pressed="false">dark mode</button> · <button id="settingsBtn" aria-label="Settings">settings</button> · <button id="fullscreen"><span>full screen</span></button></span></footer>
-<dialog id="history"><div class="dialog-head"><h2>History</h2><button class="close" aria-label="Close history">close</button></div><input id="search" type="search" placeholder="Search history" aria-label="Search history"><div class="history-tabs"><button id="allHistory" class="selected">All</button><button id="savedHistory">Saved</button><button id="importHistory">Import history</button><input id="historyFile" type="file" accept="application/json,.json" hidden><button id="export">Download history</button></div><div id="historyList"></div><p class="storage-note">Stored in this browser. Select a caption to revisit it.</p></dialog>
-<dialog id="settings"><div class="dialog-head"><h2>Settings</h2><button class="close" aria-label="Close settings">close</button></div><label class="setting">Time per picture<select id="duration"><option value="30">30 seconds</option><option value="60">1 minute</option><option value="90" selected>90 seconds</option><option value="180">3 minutes</option><option value="300">5 minutes</option></select></label><label class="setting">Slow photograph movement<input type="checkbox" id="motion"></label><label class="setting">Find new articles online<input type="checkbox" id="online" checked></label><p>Pictures and captions from Wikipedia and Wikimedia Commons. Articles and pictures already shown are skipped. When there is nothing new, the slideshow waits.</p><p>Space: pause · →: next · H: history · F: full screen</p><button id="saveCurrent">Save this picture</button><p id="feedStatus" class="storage-note">Loading pictures…</p><p id="storageStatus" class="storage-note"></p></dialog><div id="toast" role="status"></div>
-</body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="Photographs and little things to know about Earth. An unhurried, non-repeating slideshow."
+    />
+    <title>Earth loading screen</title>
+    <script>
+      try {
+        const s = JSON.parse(
+          localStorage.getItem("earth-in-passing-v1") || "{}",
+        );
+        document.documentElement.dataset.theme =
+          s.theme === "dark" ||
+          ((!s.theme || s.theme === "system") &&
+            matchMedia("(prefers-color-scheme: dark)").matches)
+            ? "dark"
+            : "light";
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="style.css" />
+    <script src="assets/qrcode.js" defer></script>
+    <script src="discovery.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main id="main" aria-label="Current picture and caption">
+      <figure>
+        <div class="photograph"><img id="photo" alt="" /></div>
+        <figcaption>
+          <div class="caption">
+            <a id="read" target="_blank" rel="noopener"
+              ><span id="title"></span></a
+            ><span id="extract"></span
+            ><a id="credit" target="_blank" rel="noopener">Image & credits</a>
+          </div>
+          <a
+            id="qr"
+            target="_blank"
+            rel="noopener"
+            aria-label="Open this story's source"
+            title="Scan to read the article"
+          ></a>
+        </figcaption>
+      </figure>
+    </main>
+    <footer>
+      <span
+        ><button id="pause" aria-label="Pause">pause</button> ·
+        <button id="next" aria-label="Next discovery">next</button> ·
+        <button id="speedBtn" aria-label="Playback speed">speed: 90s</button> ·
+        <button id="categoriesBtn" aria-label="Choose feed">feed</button> ·
+        <button id="historyBtn">
+          history (<span id="historyCount">0</span>)
+        </button></span
+      ><span
+        ><button
+          id="themeToggle"
+          aria-label="Toggle dark mode"
+          aria-pressed="false"
+        >
+          dark mode
+        </button>
+        · <button id="settingsBtn" aria-label="Settings">settings</button> ·
+        <button id="fullscreen"><span>full screen</span></button></span
+      >
+    </footer>
+    <dialog id="history">
+      <div class="dialog-head">
+        <h2>History</h2>
+        <button class="close" aria-label="Close history">close</button>
+      </div>
+      <input
+        id="search"
+        type="search"
+        placeholder="Search history"
+        aria-label="Search history"
+      />
+      <div class="history-tabs">
+        <button id="allHistory" class="selected">All</button
+        ><button id="savedHistory">Saved</button
+        ><button id="importHistory">Import history</button
+        ><input
+          id="historyFile"
+          type="file"
+          accept="application/json,.json"
+          hidden
+        /><button id="export">Download history</button>
+      </div>
+      <div id="historyList"></div>
+      <p class="storage-note">
+        Stored in this browser. Select a caption to revisit it.
+      </p>
+    </dialog>
+    <dialog id="speed" aria-labelledby="speedHeading">
+      <div class="dialog-head">
+        <h2 id="speedHeading">Speed</h2>
+        <button class="close" aria-label="Close speed">close</button>
+      </div>
+      <div class="speed-options">
+        <button data-speed="5">5 seconds</button
+        ><button data-speed="15">15 seconds</button
+        ><button data-speed="30">30 seconds</button
+        ><button data-speed="60">1 minute</button
+        ><button data-speed="90">90 seconds</button
+        ><button data-speed="180">3 minutes</button
+        ><button data-speed="300">5 minutes</button
+        ><button data-speed="0">Manual</button>
+      </div>
+      <form id="customSpeed">
+        <label for="customSeconds">Custom interval (seconds)</label>
+        <div class="form-row">
+          <input
+            id="customSeconds"
+            type="number"
+            min="5"
+            max="86400"
+            step="1"
+            required
+          /><button type="submit">Set speed</button>
+        </div>
+      </form>
+      <p id="speedCurrent" class="storage-note"></p>
+      <p id="speedError" role="status"></p>
+    </dialog>
+    <dialog id="categories" aria-labelledby="feedHeading">
+      <div class="dialog-head">
+        <h2 id="feedHeading">Feed</h2>
+        <button class="close" aria-label="Close feed">close</button>
+      </div>
+      <p>Current: <strong id="activeSource">Everything (random)</strong></p>
+      <div class="feed-options">
+        <button id="modeRandom" aria-pressed="true">Everything (random)</button>
+        <p>
+          Sample illustrated Wikipedia articles without most-read or trending
+          rankings.
+        </p>
+        <button id="modeRabbit" aria-pressed="false">Rabbit hole</button>
+        <p>
+          Follow outgoing article links for up to three pictures, then start
+          somewhere random.
+        </p>
+      </div>
+      <h3>Choose a category</h3>
+      <form id="categoryForm">
+        <label for="categorySearch">Type any subject</label>
+        <div class="form-row">
+          <input
+            id="categorySearch"
+            type="search"
+            placeholder="e.g. deep-sea fish, abandoned places, clocks"
+            autocomplete="off"
+          /><button type="submit">Search</button>
+        </div>
+      </form>
+      <p id="categoryStatus" class="storage-note" role="status">
+        Search Wikipedia’s category names, then choose a match.
+      </p>
+      <ul id="categoryResults"></ul>
+      <p class="storage-note">
+        Category browsing uses Wikipedia membership and follows subcategories up
+        to four levels deep. Broad categories overlap. If a subject has no
+        matching category, try a broader term. All modes skip articles and
+        images already shown.
+      </p>
+    </dialog>
+    <dialog id="settings">
+      <div class="dialog-head">
+        <h2>Settings</h2>
+        <button class="close" aria-label="Close settings">close</button>
+      </div>
+      <div class="setting">
+        <span>Time per picture</span
+        ><button id="speedSettings">Change speed</button>
+      </div>
+      <label class="setting"
+        >Slow photograph movement<input type="checkbox" id="motion" /></label
+      ><label class="setting"
+        >Find new articles online<input type="checkbox" id="online" checked
+      /></label>
+      <p>
+        Pictures and captions from Wikipedia and Wikimedia Commons. Articles and
+        pictures already shown are skipped. When there is nothing new, the
+        slideshow waits.
+      </p>
+      <p>Space: pause · →: next · H: history · F: full screen</p>
+      <button id="saveCurrent">Save this picture</button>
+      <p id="feedStatus" class="storage-note">Loading pictures…</p>
+      <p id="storageStatus" class="storage-note"></p>
+    </dialog>
+    <div id="toast" role="status"></div>
+  </body>
+</html>

@@ -1,34 +1,656 @@
-const $=s=>document.querySelector(s), KEY='earth-in-passing-v1';
-let state={seen:[],images:[],history:[],saved:[],duration:90,motion:false,online:true,theme:'system'}, durable=true;
-try{Object.assign(state,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch{durable=false}
-function applyTheme(){const dark=state.theme==='dark'||state.theme==='system'&&window.matchMedia?.('(prefers-color-scheme: dark)').matches;document.documentElement.dataset.theme=dark?'dark':'light';$('#themeToggle').textContent=dark?'light mode':'dark mode';$('#themeToggle').setAttribute('aria-pressed',String(!!dark))}
-applyTheme();$('#themeToggle').onclick=()=>{state.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';applyTheme();persist()};window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(state.theme==='system')applyTheme()});
-let queue=[],current=null,paused=false,elapsed=0,changing=false,discovering=false,lastDiscovery=0,historySaved=false,lastTick=performance.now(),idleTimer;
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));durable=true}catch{durable=false}$('#storageStatus').textContent=durable?'History is saved on this browser. Clearing browser data clears the no-repeat record.':'Browser storage is unavailable. History and no-repeat tracking last only for this session.';$('#historyCount').textContent=state.history.length}
-function imageKey(url){try{return decodeURIComponent(new URL(url,location.href).pathname).replace(/\/thumb\//,'/').replace(/\/\d+px-[^/]+$/,'')}catch{return url}}
-function unseen(x){return !state.seen.includes(x.id)&&!state.images.includes(imageKey(x.originalImage||x.image))}
-function toast(t){$('#toast').textContent=t;$('#toast').classList.add('show');setTimeout(()=>$('#toast').classList.remove('show'),3500)}
-function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function shortExtract(s){const sentences=s.match(/[^.!?]+[.!?]+(?:\s|$)/g)||[s];let result=sentences[0].trim();if(result.length<100&&sentences[1]&&result.length+sentences[1].length<300)result+=' '+sentences[1].trim();return result.length>420?result.slice(0,390).replace(/\s\S*$/,'')+'…':result}
-function render(x){$('#read').style.display='';$('#qr').style.visibility='';$('#main').classList.add('ready');$('#photo').style.opacity='1';current=x;$('#photo').src=x.image;$('#photo').alt=x.title;$('#title').textContent=x.title.replaceAll('_',' ')+'.';$('#extract').textContent=shortExtract(x.extract);$('#read').href=x.url;$('#credit').href=x.url;$('#credit').textContent='Image & credits';$('#qr').href=x.url;const qr=qrcode(0,'M');qr.addData(x.url);qr.make();$('#qr').innerHTML=qr.createSvgTag({cellSize:2,margin:0,scalable:true});$('#qr svg').setAttribute('aria-label','QR code linking to '+x.title);$('#saveCurrent').textContent=state.saved.includes(x.id)?'Saved':'Save this picture';elapsed=0;$('#photo').style.animation='none';requestAnimationFrame(()=>{$('#photo').style.animation=''})}
-function loadImage(url){return new Promise(resolve=>{const im=new Image();let timer=setTimeout(()=>resolve(false),12000);im.onload=()=>{clearTimeout(timer);resolve(im.naturalWidth>0)};im.onerror=()=>{clearTimeout(timer);resolve(false)};im.src=url})}
-async function next(){if(changing)return;changing=true;$('#next').disabled=true;try{let candidate;while(queue.length){let x=queue.shift();if(!unseen(x))continue;if(!await loadImage(x.image))continue;candidate=x;break}if(!candidate&&state.online){await discover(true);while(queue.length){const x=queue.shift();if(unseen(x)&&await loadImage(x.image)){candidate=x;break}}}if(candidate){if(current){$('#photo').style.opacity='0';await new Promise(r=>setTimeout(r,500))}state.seen.push(candidate.id);state.images.push(imageKey(candidate.originalImage||candidate.image));state.history.push({...candidate,seenAt:new Date().toISOString()});persist();render(candidate);if(queue.filter(unseen).length<8)discover()}else{if(!current){$('#main').classList.add('ready');$('#title').textContent='Waiting for a new picture.';$('#extract').textContent='Everything available has already been shown. Past pictures are in history.';$('#read').removeAttribute('href');$('#qr').style.visibility='hidden'}elapsed=0;toast(state.online?'Waiting for something new.':'Everything available has been shown. Turn on online discovery for more.')}}finally{changing=false;$('#next').disabled=false}}
-function normalize(x,category){if(!x||!x.originalimage||!x.extract||x.type==='disambiguation')return null;const url=x.content_urls?.desktop?.page;if(!url?.startsWith('https://en.wikipedia.org/'))return null;return {id:String(x.pageid),title:x.title.replaceAll('_',' '),category,extract:x.extract,image:x.originalimage.source,originalImage:x.originalimage.source,url,source:'Wikipedia · Wikimedia Commons'}}
-async function getJSON(url){const r=await fetch(url,{signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error(r.status);return r.json()}
-async function discover(force=false){if(discovering||!state.online||(!force&&Date.now()-lastDiscovery<60000))return;discovering=true;lastDiscovery=Date.now();try{let additions=[];const d=new Date(Date.now()-86400000*Math.floor(Math.random()*365));const date=d.toISOString().slice(0,10).replaceAll('-','/');try{const f=await getJSON('https://en.wikipedia.org/api/rest_v1/feed/featured/'+date);additions=[normalize(f.tfa,'The human story'),...(f.mostread?.articles||[]).map(x=>normalize(x,'The human story')),...(f.onthisday||[]).flatMap(x=>(x.pages||[]).map(p=>normalize(p,'The human story'))) ].filter(Boolean)}catch{}
-if(additions.filter(unseen).length<5){try{const p=new URLSearchParams({action:'query',format:'json',origin:'*',generator:'random',grnnamespace:'0',grnlimit:'20',prop:'extracts|pageimages|info',exintro:'1',explaintext:'1',exlimit:'20',piprop:'original',inprop:'url'});const r=await getJSON('https://en.wikipedia.org/w/api.php?'+p);for(const x of Object.values(r.query?.pages||{})){if(x.original?.source&&x.extract?.length>160&&!x.title.startsWith('List of'))additions.push({id:String(x.pageid),title:x.title,category:'The human story',extract:x.extract,image:x.original.source,originalImage:x.original.source,url:x.fullurl,source:'Wikipedia · Wikimedia Commons'})}}catch{}}
-$('#feedStatus').textContent=additions.length?'Online source connected.':'New articles are temporarily unavailable. Retrying automatically.';const ids=new Set(queue.map(x=>x.id));for(const x of additions){if(unseen(x)&&!ids.has(x.id)){queue.push(x);ids.add(x.id)}}
-}catch{}finally{discovering=false}}
-function setPaused(value){paused=value;$('#pause').textContent=paused?'play':'pause';$('#pause').setAttribute('aria-label',paused?'Play':'Pause');$('.photograph>img').style.animationPlayState=paused?'paused':'running'}
-function toggleSave(id){state.saved=state.saved.includes(id)?state.saved.filter(v=>v!==id):[...state.saved,id];persist();if(current?.id===id)$('#saveCurrent').textContent=state.saved.includes(id)?'Saved':'Save this picture';renderHistory()}
-function renderHistory(){const query=$('#search').value.toLowerCase();const list=state.history.filter(x=>(!historySaved||state.saved.includes(x.id))&&(x.title+' '+x.extract).toLowerCase().includes(query)).slice().reverse();$('#historyList').innerHTML=list.length?list.map(x=>`<div class="history-item"><img loading="lazy" src="${escapeHTML(x.image)}" alt=""><div><button data-revisit="${x.id}" style="text-align:left;padding:0"><h3>${escapeHTML(x.title)}</h3></button><p>${escapeHTML(x.category)} · ${new Date(x.seenAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</p><a href="${escapeHTML(x.url)}" target="_blank" rel="noopener">Read original ↗</a></div><button class="bookmark" data-save="${x.id}" aria-label="${state.saved.includes(x.id)?'Unsave':'Save'} ${escapeHTML(x.title)}">${state.saved.includes(x.id)?'♥':'♡'}</button></div>`).join(''):'<p class="empty">'+(query?'No discoveries match your search.':historySaved?'Save a discovery to keep it close.':'Your trail begins with your first discovery.')+'</p>'}
-$('#historyBtn').onclick=()=>{renderHistory();$('#history').showModal()};$('#settingsBtn').onclick=()=>$('#settings').showModal();for(const x of document.querySelectorAll('.close'))x.onclick=()=>x.closest('dialog').close();for(const d of document.querySelectorAll('dialog'))d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close()}});
-$('#pause').onclick=()=>setPaused(!paused);$('#next').onclick=next;$('#search').oninput=renderHistory;$('#allHistory').onclick=()=>{historySaved=false;$('#allHistory').classList.add('selected');$('#savedHistory').classList.remove('selected');renderHistory()};$('#savedHistory').onclick=()=>{historySaved=true;$('#savedHistory').classList.add('selected');$('#allHistory').classList.remove('selected');renderHistory()};$('#historyList').onclick=e=>{const b=e.target.closest('[data-save],[data-revisit]');if(!b)return;if(b.dataset.save)toggleSave(b.dataset.save);else{const x=state.history.find(x=>x.id===b.dataset.revisit);setPaused(true);render(x);$('#history').close();toast('Revisiting from history. Playback paused.')}};
-$('#export').onclick=()=>{const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),discoveries:state.history.map(x=>({...x,saved:state.saved.includes(x.id)}))},null,2)],{type:'application/json'});const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='earth-in-passing-history.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
-$('#importHistory').onclick=()=>$('#historyFile').click();
-$('#historyFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;const data=JSON.parse(await file.text());if(!Array.isArray(data.discoveries))throw Error('Invalid history file');const items=data.discoveries.filter(x=>x&&typeof x.id==='string'&&/^\d+$/.test(x.id)&&typeof x.title==='string'&&typeof x.extract==='string'&&typeof x.image==='string'&&typeof x.originalImage==='string'&&typeof x.category==='string'&&typeof x.url==='string'&&x.url.startsWith('https://en.wikipedia.org/wiki/')&&(x.image.startsWith('assets/')&&!x.image.includes('..')||/^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(x.image))&&Number.isFinite(Date.parse(x.seenAt)));if(items.length!==data.discoveries.length)throw Error('Invalid history records');for(const x of items){if(!state.history.some(h=>h.id===x.id))state.history.push(x);if(!state.seen.includes(x.id))state.seen.push(x.id);const key=imageKey(x.originalImage||x.image);if(!state.images.includes(key))state.images.push(key);if(x.saved&&!state.saved.includes(x.id))state.saved.push(x.id)}state.history.sort((a,b)=>Date.parse(a.seenAt)-Date.parse(b.seenAt));persist();renderHistory();toast('History imported. Previously seen pictures will be skipped.')}catch{toast('Could not import that file. Use a downloaded history file.')}finally{e.target.value=''}};
-$('#duration').value=state.duration;$('#duration').onchange=e=>{state.duration=Number(e.target.value);elapsed=0;persist()};$('#motion').checked=state.motion;$('.photograph').classList.toggle('motion',state.motion);$('#motion').onchange=e=>{state.motion=e.target.checked;$('.photograph').classList.toggle('motion',state.motion);persist()};$('#online').checked=state.online;$('#online').onchange=e=>{state.online=e.target.checked;persist();if(state.online)discover(true)};$('#saveCurrent').onclick=()=>{if(current){toggleSave(current.id);toast(state.saved.includes(current.id)?'Saved.':'Removed from saved pictures.')}};
-async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{toast('Use your browser’s full-screen command.')}}$('#fullscreen').onclick=fullscreen;document.addEventListener('fullscreenchange',()=>{document.body.classList.toggle('immersive',!!document.fullscreenElement);$('#fullscreen span').textContent=document.fullscreenElement?'leave full screen':'full screen'});document.addEventListener('mousemove',()=>{document.body.classList.remove('idle');clearTimeout(idleTimer);idleTimer=setTimeout(()=>document.body.classList.add('idle'),9000)});
-document.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||document.querySelector('dialog[open]'))return;if(e.code==='Space'){e.preventDefault();setPaused(!paused)}if(e.key==='ArrowRight')next();if(e.key.toLowerCase()==='h')$('#historyBtn').click();if(e.key.toLowerCase()==='f')fullscreen()});window.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{Object.assign(state,JSON.parse(e.newValue));applyTheme()}catch{}}});window.addEventListener('online',()=>discover(true));
-setInterval(()=>{const now=performance.now(),delta=Math.min((now-lastTick)/1000,2);lastTick=now;if(!paused&&!changing&&!document.querySelector('dialog[open]')){elapsed+=delta;if(elapsed>=state.duration){elapsed=0;next()}}if(queue.filter(unseen).length<8&&state.online)discover()},250);
-(async()=>{persist();try{queue=await getJSON('stories.json');const first=queue.shift();queue.sort(()=>Math.random()-.5);queue.sort((a,b)=>Number(!a.image.startsWith('assets/'))-Number(!b.image.startsWith('assets/')));queue.unshift(first);await next();discover()}catch{toast('Could not load discoveries. Refresh to try again.')}})();
+/* Display, playback, and browser-local persistence. See discovery.js for Wikipedia access. */
+"use strict";
+const $ = (selector) => document.querySelector(selector);
+const D = EarthDiscovery;
+const KEY = "earth-in-passing-v1"; // Preserve existing installations and exports.
+const client = D.createClient();
+let state = {
+  seen: [],
+  images: [],
+  history: [],
+  saved: [],
+  duration: 90,
+  motion: false,
+  online: true,
+  theme: "system",
+  browse: "random",
+  category: "",
+};
+try {
+  Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}"));
+} catch {}
+if (!["random", "rabbit", "category"].includes(state.browse))
+  state.browse = "random";
+if (!Number.isFinite(state.duration) || state.duration < 0) state.duration = 90;
+let current = null;
+let queue = [];
+let offlineCollection = [];
+let paused = false;
+let elapsed = 0;
+let busy = false;
+let fetching = null;
+let epoch = 0;
+let rabbitHops = 0;
+let savedOnly = false;
+let lastTick = performance.now();
+let retryAfter = 0;
+let idleTimer;
+let searchTimer;
+let searchVersion = 0;
+let toastTimer;
+
+function persist() {
+  let durable = true;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch {
+    durable = false;
+  }
+  $("#storageStatus").textContent = durable
+    ? "History is saved in this browser. Clearing browser data clears the seen record."
+    : "Browser storage is unavailable or full. Tracking lasts for this session; download history to keep it.";
+  $("#historyCount").textContent = state.history.length;
+}
+
+function toast(text) {
+  $("#toast").textContent = text;
+  $("#toast").classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 4500);
+}
+
+function applyTheme() {
+  const dark =
+    state.theme === "dark" ||
+    (state.theme === "system" &&
+      matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  $("#themeToggle").textContent = dark ? "light mode" : "dark mode";
+  $("#themeToggle").setAttribute("aria-pressed", String(dark));
+}
+
+function shortCaption(text) {
+  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)/g) || [text];
+  let result = sentences[0].trim();
+  if (
+    result.length < 100 &&
+    sentences[1] &&
+    result.length + sentences[1].length < 300
+  ) {
+    result += " " + sentences[1].trim();
+  }
+  return result.length > 420
+    ? result.slice(0, 390).replace(/\s\S*$/, "") + "…"
+    : result;
+}
+
+function escapeHTML(text) {
+  return String(text).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
+}
+
+function render(story) {
+  current = story;
+  $("#main").classList.add("ready");
+  $("#photo").src = story.image;
+  $("#photo").alt = story.title;
+  $("#photo").style.opacity = "1";
+  $("#title").textContent = story.title.replaceAll("_", " ") + ".";
+  $("#extract").textContent = shortCaption(story.extract);
+  for (const id of ["read", "credit", "qr"]) $("#" + id).href = story.url;
+  $("#qr").hidden = false;
+  $("#credit").hidden = false;
+  const code = qrcode(0, "M");
+  code.addData(story.url);
+  code.make();
+  $("#qr").innerHTML = code.createSvgTag({
+    cellSize: 2,
+    margin: 0,
+    scalable: true,
+  });
+  $("#qr svg").setAttribute("aria-label", "QR code linking to " + story.title);
+  updateSaveButton();
+  elapsed = 0;
+  $("#photo").style.animation = "none";
+  requestAnimationFrame(() => {
+    $("#photo").style.animation = "";
+  });
+}
+
+function updateSaveButton() {
+  $("#saveCurrent").textContent =
+    current && state.saved.includes(current.id) ? "Saved" : "Save this picture";
+}
+
+function loadImage(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const timer = setTimeout(() => resolve(false), 12000);
+    image.onload = () => {
+      clearTimeout(timer);
+      resolve(image.naturalWidth > 0);
+    };
+    image.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    image.src = url;
+  });
+}
+
+function sourceLabel() {
+  if (state.browse === "category")
+    return state.category.replace(/^Category:/, "");
+  return state.browse === "rabbit" ? "Rabbit hole" : "Everything (random)";
+}
+
+function updateSourceUI() {
+  $("#activeSource").textContent = sourceLabel();
+  $("#modeRandom").setAttribute(
+    "aria-pressed",
+    String(state.browse === "random"),
+  );
+  $("#modeRabbit").setAttribute(
+    "aria-pressed",
+    String(state.browse === "rabbit"),
+  );
+}
+
+async function refill() {
+  const generation = epoch;
+  if (fetching?.epoch === generation) return fetching.promise;
+  const job = (async () => {
+    if (!state.online) {
+      if (state.browse !== "random") {
+        $("#feedStatus").textContent =
+          "This mode needs Wikipedia online. The current picture will stay here.";
+        return;
+      }
+      queue.push(
+        ...D.shuffle(offlineCollection).filter((x) => D.unseen(x, state)),
+      );
+      $("#feedStatus").textContent =
+        "Offline: using the small bundled collection.";
+      return;
+    }
+    try {
+      let stories;
+      let usedRelated = false;
+      if (state.browse === "category") {
+        const result = await client.category(state.category);
+        stories = result.stories;
+        if (generation !== epoch) return;
+        $("#feedStatus").textContent = result.exhausted
+          ? "Category traversal finished. Seen articles and images are still skipped."
+          : "Exploring " + sourceLabel() + " and its subcategories.";
+      } else if (state.browse === "rabbit" && current && rabbitHops < 3) {
+        stories = await client.related(current.id);
+        usedRelated = stories.some((x) => D.unseen(x, state));
+        if (!usedRelated) stories = await client.random();
+      } else {
+        stories = await client.random();
+      }
+      if (generation !== epoch) return;
+      if (state.browse !== "category") {
+        $("#feedStatus").textContent =
+          state.browse === "rabbit"
+            ? usedRelated
+              ? "Following an outgoing link from " + current.title + "."
+              : "Starting somewhere random."
+            : "Random Wikipedia articles. No most-read, trending, or featured feed.";
+      }
+      const ids = new Set(queue.map((x) => x.id));
+      for (const story of stories) {
+        if (D.unseen(story, state) && !ids.has(story.id)) {
+          queue.push({ ...story, relatedHop: usedRelated });
+          ids.add(story.id);
+        }
+      }
+      retryAfter = 0;
+    } catch {
+      if (generation !== epoch) return;
+      retryAfter = Date.now() + 60000;
+      if (state.browse === "random") {
+        queue.push(
+          ...D.shuffle(offlineCollection).filter((x) => D.unseen(x, state)),
+        );
+        $("#feedStatus").textContent =
+          "Wikipedia is unavailable. Using the small bundled collection; retrying in a minute.";
+      } else {
+        $("#feedStatus").textContent =
+          "Wikipedia is unavailable. This selection stays active; retrying in a minute.";
+      }
+    }
+  })();
+  fetching = { epoch: generation, promise: job };
+  try {
+    await job;
+  } finally {
+    if (fetching?.promise === job) fetching = null;
+  }
+}
+
+async function next() {
+  if (busy) return;
+  busy = true;
+  $("#next").disabled = true;
+  const generation = epoch;
+  try {
+    let candidate;
+    // Bounded work avoids hammering Wikipedia for sparse/exhausted categories.
+    for (let batch = 0; batch < 4 && !candidate; batch++) {
+      if (!queue.some((x) => D.unseen(x, state))) {
+        queue = [];
+        if (Date.now() < retryAfter) break;
+        await refill();
+      }
+      if (generation !== epoch) return;
+      while (queue.length) {
+        const story = queue.shift();
+        if (!D.unseen(story, state)) continue;
+        const loaded = await loadImage(story.image);
+        if (generation !== epoch) return;
+        if (loaded && D.unseen(story, state)) {
+          candidate = story;
+          break;
+        }
+      }
+      if (!state.online) break;
+    }
+    if (candidate) {
+      if (current) {
+        $("#photo").style.opacity = "0";
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (generation !== epoch) {
+        $("#photo").style.opacity = "1";
+        return;
+      }
+      state.seen.push(candidate.id);
+      state.images.push(D.imageKey(candidate.originalImage || candidate.image));
+      state.history.push({ ...candidate, seenAt: new Date().toISOString() });
+      rabbitHops = candidate.relatedHop ? rabbitHops + 1 : 0;
+      persist();
+      render(candidate);
+      if (state.browse === "rabbit") queue = []; // Each hop starts from the displayed article.
+    } else {
+      elapsed = 0;
+      const message =
+        state.browse === "category"
+          ? "No new illustrated articles found in this part of the category. Try next again to explore further, or choose another category."
+          : "No new pictures available right now. Nothing will repeat.";
+      toast(message);
+      if (!current) {
+        $("#main").classList.add("ready");
+        $("#title").textContent = "Waiting for a picture.";
+        $("#extract").textContent = message;
+        $("#read").removeAttribute("href");
+        $("#credit").hidden = true;
+        $("#qr").hidden = true;
+      }
+    }
+  } finally {
+    busy = false;
+    $("#next").disabled = false;
+    if (generation !== epoch) next();
+  }
+}
+
+function selectSource(browse, category = "") {
+  epoch++;
+  queue = [];
+  rabbitHops = 0;
+  retryAfter = 0;
+  state.browse = browse;
+  state.category = category;
+  updateSourceUI();
+  persist();
+  $("#categories").close();
+  toast("Loading: " + sourceLabel());
+  next();
+}
+
+function setPaused(value) {
+  paused = value;
+  $("#pause").textContent = value ? "play" : "pause";
+  $("#pause").setAttribute("aria-label", value ? "Play" : "Pause");
+  $("#photo").style.animationPlayState = value ? "paused" : "running";
+}
+
+function speedLabel(seconds) {
+  if (!seconds) return "manual";
+  return seconds % 60 === 0 ? seconds / 60 + "m" : seconds + "s";
+}
+
+function setSpeed(seconds) {
+  if (
+    !Number.isInteger(seconds) ||
+    (seconds !== 0 && (seconds < 5 || seconds > 86400))
+  ) {
+    $("#speedError").textContent =
+      "Choose a whole number from 5 to 86,400 seconds.";
+    return;
+  }
+  state.duration = seconds;
+  elapsed = 0;
+  $("#speedError").textContent = "";
+  syncSpeedUI();
+  persist();
+}
+
+function syncSpeedUI() {
+  $("#speedBtn").textContent = "speed: " + speedLabel(state.duration);
+  $("#speedCurrent").textContent = state.duration
+    ? "A new picture every " + state.duration + " seconds."
+    : "Manual: pictures do not advance automatically.";
+  for (const button of document.querySelectorAll("[data-speed]")) {
+    button.setAttribute(
+      "aria-pressed",
+      String(Number(button.dataset.speed) === state.duration),
+    );
+  }
+  if (state.duration) $("#customSeconds").value = state.duration;
+}
+
+function renderHistory() {
+  const query = $("#search").value.toLowerCase();
+  const stories = state.history
+    .filter(
+      (x) =>
+        (!savedOnly || state.saved.includes(x.id)) &&
+        (x.title + " " + x.extract).toLowerCase().includes(query),
+    )
+    .slice()
+    .reverse();
+  $("#historyList").innerHTML = stories.length
+    ? stories
+        .map(
+          (x) => `
+    <div class="history-item"><img loading="lazy" src="${escapeHTML(x.image)}" alt="">
+      <div><button data-revisit="${x.id}" class="revisit"><h3>${escapeHTML(x.title)}</h3></button>
+      <p>${escapeHTML(x.category)} · ${new Date(x.seenAt).toLocaleString()}</p>
+      <a href="${escapeHTML(x.url)}" target="_blank" rel="noopener">Read original ↗</a></div>
+      <button class="bookmark" data-save="${x.id}" aria-label="${state.saved.includes(x.id) ? "Unsave" : "Save"} ${escapeHTML(x.title)}">${state.saved.includes(x.id) ? "♥" : "♡"}</button>
+    </div>`,
+        )
+        .join("")
+    : '<p class="empty">' +
+      (query
+        ? "No matching pictures."
+        : savedOnly
+          ? "No saved pictures yet."
+          : "Your first picture will appear here.") +
+      "</p>";
+}
+
+function toggleSave(id) {
+  state.saved = state.saved.includes(id)
+    ? state.saved.filter((x) => x !== id)
+    : [...state.saved, id];
+  persist();
+  updateSaveButton();
+  renderHistory();
+}
+
+async function searchCategories() {
+  clearTimeout(searchTimer);
+  const version = ++searchVersion;
+  const query = $("#categorySearch").value.trim();
+  $("#categoryResults").replaceChildren();
+  $("#categoryStatus").textContent = query
+    ? "Searching Wikipedia categories…"
+    : "Type a subject to find its Wikipedia categories.";
+  if (!query) return;
+  try {
+    const titles = await client.searchCategories(query);
+    if (version !== searchVersion) return;
+    $("#categoryStatus").textContent = titles.length
+      ? "Choose a category. Its articles and subcategories will be explored."
+      : "No matching Wikipedia category. Try another spelling or a broader subject.";
+    for (const title of titles) {
+      const button = document.createElement("button");
+      button.textContent = title.replace(/^Category:/, "");
+      button.onclick = () => selectSource("category", title);
+      const item = document.createElement("li");
+      item.append(button);
+      $("#categoryResults").append(item);
+    }
+  } catch {
+    if (version === searchVersion)
+      $("#categoryStatus").textContent =
+        "Could not reach Wikipedia. Try again when connected.";
+  }
+}
+
+// Small, plain controls. All additional choices live inside dialogs.
+$("#pause").onclick = () => setPaused(!paused);
+$("#next").onclick = next;
+$("#themeToggle").onclick = () => {
+  state.theme =
+    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme();
+  persist();
+};
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (state.theme === "system") applyTheme();
+});
+for (const [button, dialog] of [
+  ["historyBtn", "history"],
+  ["settingsBtn", "settings"],
+  ["speedBtn", "speed"],
+  ["categoriesBtn", "categories"],
+]) {
+  $("#" + button).onclick = () => {
+    if (dialog === "history") renderHistory();
+    $("#" + dialog).showModal();
+  };
+}
+for (const button of document.querySelectorAll(".close"))
+  button.onclick = () => button.closest("dialog").close();
+for (const dialog of document.querySelectorAll("dialog")) {
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog) return;
+    const r = dialog.getBoundingClientRect();
+    if (
+      event.clientX < r.left ||
+      event.clientX > r.right ||
+      event.clientY < r.top ||
+      event.clientY > r.bottom
+    )
+      dialog.close();
+  });
+}
+for (const button of document.querySelectorAll("[data-speed]"))
+  button.onclick = () => setSpeed(Number(button.dataset.speed));
+$("#customSpeed").onsubmit = (event) => {
+  event.preventDefault();
+  setSpeed(Number($("#customSeconds").value));
+};
+$("#speedSettings").onclick = () => {
+  $("#settings").close();
+  $("#speed").showModal();
+};
+$("#modeRandom").onclick = () => selectSource("random");
+$("#modeRabbit").onclick = () => selectSource("rabbit");
+$("#categoryForm").onsubmit = (event) => {
+  event.preventDefault();
+  searchCategories();
+};
+$("#categorySearch").oninput = () => {
+  searchVersion++; // Invalidate a previous response immediately, before debounce completes.
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchCategories, 400);
+};
+$("#search").oninput = renderHistory;
+$("#allHistory").onclick = () => {
+  savedOnly = false;
+  $("#allHistory").classList.add("selected");
+  $("#savedHistory").classList.remove("selected");
+  renderHistory();
+};
+$("#savedHistory").onclick = () => {
+  savedOnly = true;
+  $("#savedHistory").classList.add("selected");
+  $("#allHistory").classList.remove("selected");
+  renderHistory();
+};
+$("#historyList").onclick = (event) => {
+  const button = event.target.closest("[data-save],[data-revisit]");
+  if (!button) return;
+  if (button.dataset.save) toggleSave(button.dataset.save);
+  else {
+    const story = state.history.find((x) => x.id === button.dataset.revisit);
+    setPaused(true);
+    render(story);
+    $("#history").close();
+    toast("Revisiting from history. Playback paused.");
+  }
+};
+$("#saveCurrent").onclick = () => {
+  if (current) toggleSave(current.id);
+};
+$("#export").onclick = () => {
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          discoveries: state.history.map((x) => ({
+            ...x,
+            saved: state.saved.includes(x.id),
+          })),
+        },
+        null,
+        2,
+      ),
+    ],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "earth-loading-screen-history.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$("#importHistory").onclick = () => $("#historyFile").click();
+$("#historyFile").onchange = async (event) => {
+  try {
+    const file = event.target.files[0];
+    if (!file) return;
+    const imported = D.importHistory(state, JSON.parse(await file.text()));
+    Object.assign(state, imported);
+    persist();
+    renderHistory();
+    toast("History imported. Previously seen pictures will be skipped.");
+  } catch {
+    toast("Could not import that file. Use a downloaded history file.");
+  } finally {
+    event.target.value = "";
+  }
+};
+$("#motion").checked = state.motion;
+$(".photograph").classList.toggle("motion", state.motion);
+$("#motion").onchange = (event) => {
+  state.motion = event.target.checked;
+  $(".photograph").classList.toggle("motion", state.motion);
+  persist();
+};
+$("#online").checked = state.online;
+$("#online").onchange = (event) => {
+  epoch++;
+  queue = [];
+  retryAfter = 0;
+  state.online = event.target.checked;
+  persist();
+};
+async function fullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch {
+    toast("Use your browser’s full-screen command.");
+  }
+}
+$("#fullscreen").onclick = fullscreen;
+document.addEventListener("fullscreenchange", () => {
+  document.body.classList.toggle("immersive", !!document.fullscreenElement);
+  $("#fullscreen span").textContent = document.fullscreenElement
+    ? "leave full screen"
+    : "full screen";
+});
+document.addEventListener("mousemove", () => {
+  document.body.classList.remove("idle");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add("idle"), 9000);
+});
+document.addEventListener("keydown", (event) => {
+  if (
+    /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) ||
+    document.querySelector("dialog[open]")
+  )
+    return;
+  if (event.code === "Space") {
+    event.preventDefault();
+    setPaused(!paused);
+  }
+  if (event.key === "ArrowRight") next();
+  if (event.key.toLowerCase() === "h") $("#historyBtn").click();
+  if (event.key.toLowerCase() === "f") fullscreen();
+});
+window.addEventListener("storage", (event) => {
+  if (event.key !== KEY || !event.newValue) return;
+  try {
+    const other = JSON.parse(event.newValue);
+    const merged = D.importHistory(state, {
+      discoveries: other.history.map((x) => ({
+        ...x,
+        saved: other.saved.includes(x.id),
+      })),
+    });
+    Object.assign(state, merged);
+    $("#historyCount").textContent = state.history.length;
+  } catch {}
+});
+window.addEventListener("online", () => {
+  retryAfter = 0;
+});
+setInterval(() => {
+  const now = performance.now();
+  const delta = Math.min((now - lastTick) / 1000, 2);
+  lastTick = now;
+  if (
+    !paused &&
+    !busy &&
+    state.duration > 0 &&
+    !document.querySelector("dialog[open]")
+  ) {
+    elapsed += delta;
+    if (elapsed >= state.duration) {
+      elapsed = 0;
+      next();
+    }
+  }
+}, 250);
+
+(async function start() {
+  applyTheme();
+  syncSpeedUI();
+  updateSourceUI();
+  persist();
+  try {
+    const response = await fetch("stories.json");
+    if (response.ok) offlineCollection = await response.json();
+  } catch {}
+  $("#feedStatus").textContent = "Finding a random illustrated article…";
+  await next();
+})();
