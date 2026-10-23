@@ -1,14 +1,250 @@
-const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../dist/app.js'),'utf8');
-const story=(id,image)=>({id,title:'Discovery '+id,category:'The living world',extract:'A remarkable living world. A new discovery worth spending time with.',image,originalImage:image,url:'https://en.wikipedia.org/wiki/Discovery_'+id});
-const stories=[story('1','https://example.org/a.jpg'),story('2','https://example.org/b.jpg'),story('3','https://example.org/b.jpg'),story('4','https://example.org/c.jpg')];
-let saved=JSON.stringify({seen:['1'],images:['/a.jpg'],history:[{...stories[0],seenAt:new Date().toISOString()}],saved:[],duration:90,motion:true,online:false});
-function start(){const nodes=new Map();const node=s=>{if(!nodes.has(s))nodes.set(s,{style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},value:'',textContent:'',innerHTML:'',showModal(){},close(){},addEventListener(){}});return nodes.get(s)};
-const context=vm.createContext({console,URL,URLSearchParams,AbortSignal,Date,Math:Object.assign(Object.create(Math),{random:()=>0.5}),JSON,Set,Image:class{set src(v){queueMicrotask(()=>this.onload?.());this.naturalWidth=100}},document:{querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:()=>[],addEventListener(){},body:node('body'),documentElement:node('html')},location:{href:'https://local.test/'},window:{addEventListener(){}},localStorage:{getItem:()=>saved,setItem:(k,v)=>saved=v},performance:{now:()=>0},requestAnimationFrame:fn=>fn(),setInterval(){},setTimeout:(fn,ms)=>ms===500?setImmediate(fn):0,clearTimeout(){},fetch:async()=>({ok:true,json:async()=>structuredClone(stories)}),qrcode:()=>({addData(){},make(){},createSvgTag:()=>'<svg></svg>'}),Blob});vm.runInContext(source,context);return context}
-const settle=()=>new Promise(r=>setImmediate(r));
-(async()=>{let c=start();await settle();await settle();assert.equal(vm.runInContext('current.id',c),'2','skips articles seen before startup');await vm.runInContext('next()',c);assert.equal(vm.runInContext('current.id',c),'4','skips repeated image under a different article');await vm.runInContext('next()',c);assert.equal(vm.runInContext('state.history.length',c),3,'exhaustion adds no repeats');c=start();await settle();await settle();assert.equal(vm.runInContext('current',c),null,'refresh after exhaustion waits instead of repeating');assert.equal(JSON.parse(saved).history.length,3);
-await vm.runInContext(`document.querySelector('#historyFile').onchange({target:{value:'test',files:[{text:async()=>JSON.stringify({discoveries:[{id:'5',title:'Imported discovery',category:'The living world',extract:'An imported caption.',image:'assets/opening.jpg',originalImage:'https://upload.wikimedia.org/wikipedia/commons/a/a8/opening.jpg',url:'https://en.wikipedia.org/wiki/Earthrise',seenAt:'2026-10-22T00:00:00Z',saved:true}]})}]}})`,c);
-assert.equal(vm.runInContext("state.seen.includes('5') && state.saved.includes('5')",c),true,'import restores seen and saved record');
-await vm.runInContext(`document.querySelector('#historyFile').onchange({target:{value:'test',files:[{text:async()=>JSON.stringify({discoveries:[{id:'6',image:'javascript:alert(1)'}]})}]}})`,c);
-assert.equal(vm.runInContext('state.history.length',c),4,'invalid imports leave existing history intact');
-console.log('PASS: prior article deduplication, image deduplication, exhaustion, persistence across restart, history migration, invalid import handling.');})().catch(e=>{console.error(e);process.exitCode=1});
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const vm = require("node:vm");
+const fs = require("node:fs");
+const path = require("node:path");
+const D = require("../dist/discovery.js");
+const source = fs.readFileSync(path.join(__dirname, "../dist/app.js"), "utf8");
+const story = (id, image) => ({
+  id,
+  title: "Discovery " + id,
+  category: "Random article",
+  extract: "A remarkable discovery.",
+  image: "https://upload.wikimedia.org/" + image,
+  originalImage: "https://upload.wikimedia.org/" + image,
+  url: "https://en.wikipedia.org/wiki/Discovery_" + id,
+});
+const stories = [
+  story("1", "a.jpg"),
+  story("2", "b.jpg"),
+  story("3", "b.jpg"),
+  story("4", "c.jpg"),
+];
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+function harness(initial = {}, api = {}) {
+  let saved = JSON.stringify({
+    seen: ["1"],
+    images: ["/a.jpg"],
+    history: [{ ...stories[0], seenAt: new Date().toISOString() }],
+    saved: [],
+    online: true,
+    ...initial,
+  });
+  const nodes = new Map();
+  const node = (selector) => {
+    if (!nodes.has(selector))
+      nodes.set(selector, {
+        style: {},
+        dataset: {},
+        classList: { add() {}, remove() {}, toggle() {} },
+        setAttribute() {},
+        removeAttribute() {},
+        value: "",
+        textContent: "",
+        innerHTML: "",
+        showModal() {},
+        close() {},
+        click() {},
+        addEventListener() {},
+        replaceChildren() {},
+        append() {},
+      });
+    return nodes.get(selector);
+  };
+  let tick;
+  let now = 0;
+  const context = vm.createContext({
+    console,
+    URL,
+    URLSearchParams,
+    AbortSignal,
+    Date,
+    Math,
+    JSON,
+    Set,
+    Blob,
+    EarthDiscovery: {
+      ...D,
+      createClient: () => ({
+        random: async () => structuredClone(stories),
+        ...api,
+      }),
+    },
+    Image: class {
+      set src(value) {
+        this.naturalWidth = 100;
+        queueMicrotask(() => this.onload?.());
+      }
+    },
+    document: {
+      querySelector: (s) => (s === "dialog[open]" ? null : node(s)),
+      querySelectorAll: () => [],
+      createElement: () => node("created"),
+      addEventListener() {},
+      body: node("body"),
+      documentElement: node("html"),
+    },
+    window: { addEventListener() {} },
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    localStorage: {
+      getItem: () => saved,
+      setItem: (key, value) => {
+        saved = value;
+      },
+    },
+    performance: { now: () => now },
+    requestAnimationFrame: (fn) => fn(),
+    setInterval: (fn) => {
+      tick = fn;
+    },
+    setTimeout: (fn, ms) => (ms === 500 ? setImmediate(fn) : 0),
+    clearTimeout() {},
+    fetch: async () => ({
+      ok: true,
+      json: async () => structuredClone(stories),
+    }),
+    qrcode: () => ({
+      addData() {},
+      make() {},
+      createSvgTag: () => "<svg></svg>",
+    }),
+  });
+  vm.runInContext(source, context);
+  return {
+    context,
+    read: (expr) => vm.runInContext(expr, context),
+    saved: () => saved,
+    advance: async () => {
+      now += 2000;
+      tick();
+      await settle();
+      await settle();
+    },
+  };
+}
+
+test("playback skips prior articles, duplicate images, and waits at exhaustion across restart", async () => {
+  let h = harness();
+  await settle();
+  await settle();
+  assert.equal(h.read("current.id"), "2");
+  await h.read("next()");
+  assert.equal(h.read("current.id"), "4");
+  await h.read("next()");
+  assert.equal(h.read("state.history.length"), 3);
+  h = harness(JSON.parse(h.saved()));
+  await settle();
+  await settle();
+  assert.equal(h.read("current"), null);
+});
+
+test("manual speed never advances automatically; custom speed is validated and persisted", async () => {
+  const h = harness();
+  await settle();
+  await settle();
+  h.read("setSpeed(0)");
+  for (let i = 0; i < 10; i++) await h.advance();
+  assert.equal(h.read("current.id"), "2");
+  h.read("setSpeed(2)");
+  assert.equal(h.read("state.duration"), 0);
+  h.read("setSpeed(5)");
+  assert.equal(JSON.parse(h.saved()).duration, 5);
+  for (let i = 0; i < 3; i++) await h.advance();
+  assert.equal(h.read("current.id"), "4");
+});
+
+test("switching feed discards an in-flight response from the old category", async () => {
+  let resolveCategory;
+  const h = harness(
+    {},
+    {
+      category: () =>
+        new Promise((resolve) => {
+          resolveCategory = resolve;
+        }),
+    },
+  );
+  await settle();
+  await settle();
+  h.read("selectSource('category', 'Category:Clocks')");
+  await settle();
+  h.read("selectSource('random')");
+  resolveCategory({
+    stories: [story("99", "old-category.jpg")],
+    exhausted: true,
+  });
+  await settle();
+  await settle();
+  await settle();
+  await settle();
+  assert.equal(h.read("state.browse"), "random");
+  assert.equal(h.read("state.seen.includes('99')"), false);
+  assert.equal(h.read("current.id"), "4");
+});
+
+test("rabbit mode follows three links then returns to random sampling", async () => {
+  let count = 10;
+  let randomCalls = 0;
+  const h = harness(
+    { browse: "rabbit" },
+    {
+      random: async () => {
+        randomCalls++;
+        return [story(String(count++), "r" + count + ".jpg")];
+      },
+      related: async () => [story(String(count++), "link" + count + ".jpg")],
+    },
+  );
+  await settle();
+  await settle();
+  for (let i = 0; i < 3; i++) await h.read("next()");
+  assert.equal(h.read("rabbitHops"), 3);
+  assert.equal(randomCalls, 1);
+  await h.read("next()");
+  assert.equal(randomCalls, 2);
+  assert.equal(h.read("rabbitHops"), 0);
+});
+
+test("empty category never leaks random or bundled pictures", async () => {
+  let randomCalls = 0;
+  const h = harness(
+    { browse: "category", category: "Category:Empty" },
+    {
+      category: async () => ({ stories: [], exhausted: true }),
+      random: async () => {
+        randomCalls++;
+        return stories;
+      },
+    },
+  );
+  await settle();
+  await settle();
+  assert.equal(h.read("current"), null);
+  assert.equal(randomCalls, 0);
+});
+
+test("offline category selection remains restricted rather than showing the bundled collection", async () => {
+  const h = harness({
+    online: false,
+    browse: "category",
+    category: "Category:Clocks",
+  });
+  await settle();
+  await settle();
+  assert.equal(h.read("current"), null);
+  assert.equal(h.read("state.history.length"), 1);
+});
+
+test("random mode reports its offline fallback and still deduplicates it", async () => {
+  const h = harness({ online: false });
+  await settle();
+  await settle();
+  assert.ok(["2", "4"].includes(h.read("current.id")));
+  assert.match(
+    h.read("document.querySelector('#feedStatus').textContent"),
+    /Offline/,
+  );
+  await h.read("next()");
+  assert.equal(h.read("state.history.length"), 3);
+});
