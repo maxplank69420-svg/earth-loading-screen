@@ -175,13 +175,19 @@
         ) {
           const index = choose(cursor.frontier.length);
           const node = cursor.frontier.splice(index, 1)[0];
-          const data = await request({
-            list: "categorymembers",
-            cmtitle: node.title,
-            cmtype: "page|subcat",
-            cmlimit: "500",
-            ...(node.continue ? { cmcontinue: node.continue } : {}),
-          });
+          let data;
+          try {
+            data = await request({
+              list: "categorymembers",
+              cmtitle: node.title,
+              cmtype: "page|subcat",
+              cmlimit: "500",
+              ...(node.continue ? { cmcontinue: node.continue } : {}),
+            });
+          } catch (error) {
+            cursor.frontier.push(node); // Keep traversal resumable after a transient outage.
+            throw error;
+          }
           requests++;
           for (const member of shuffle(
             data.query?.categorymembers || [],
@@ -209,10 +215,15 @@
           cursor.ids = shuffle([...new Set(cursor.ids)], choose);
         }
         const ids = cursor.ids.splice(0, 20);
-        return {
-          stories: await articles(ids, title.replace(/^Category:/, "")),
-          exhausted: !cursor.frontier.length && !cursor.ids.length,
-        };
+        try {
+          return {
+            stories: await articles(ids, title.replace(/^Category:/, "")),
+            exhausted: !cursor.frontier.length && !cursor.ids.length,
+          };
+        } catch (error) {
+          cursor.ids.unshift(...ids); // These articles have not been displayed yet.
+          throw error;
+        }
       },
 
       async related(pageId) {
