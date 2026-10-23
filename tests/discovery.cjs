@@ -170,3 +170,27 @@ test("history migration merges records and rejects invalid imports atomically", 
   );
   assert.deepEqual(state.history, []);
 });
+
+test("category traversal resumes after membership and article-detail failures", async () => {
+  let membershipFail = true;
+  let detailsFail = true;
+  const client = D.createClient({
+    request: async (params) => {
+      if (params.list === "categorymembers") {
+        if (membershipFail) {
+          membershipFail = false;
+          throw new Error("temporary rate limit");
+        }
+        return { query: { categorymembers: [{ ns: 0, pageid: 7 }] } };
+      }
+      if (detailsFail) {
+        detailsFail = false;
+        throw new Error("temporary network failure");
+      }
+      return { query: { pages: [page(7)] } };
+    },
+  });
+  await assert.rejects(() => client.category("Category:Clocks"));
+  await assert.rejects(() => client.category("Category:Clocks"));
+  assert.equal((await client.category("Category:Clocks")).stories[0].id, "7");
+});
