@@ -1,0 +1,20 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check JavaScript syntax
+        run: |
+          node --check dist/app.js
+          node --check dist/discovery.js
+      - name: Run deterministic tests
+        run: node --test tests/*.cjs
+      - name: Check local launcher
+        run: python3 -m py_compile serve.py
