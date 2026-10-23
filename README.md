@@ -1,49 +1,88 @@
 # Earth loading screen
 
-Just a photo and a caption, like Wikipedia. For a spare monitor.
+A photograph, a caption, and somewhere else to go.
 
-- New pictures automatically, with no repeated articles or images in this browser.
-- Small source QR code, searchable history, and saved pictures.
-- Light and dark modes. Follows your system until you choose a mode.
-- Plain HTML, CSS, and JavaScript. No build, API keys, server account, or npm dependencies.
+A quiet Wikipedia slideshow for a spare monitor. Leave it running while the house is asleep, or follow a subject down a rabbit hole. Plain serif text, blue links, and no repeated articles or pictures in the same browser.
+
+**[Open the live site](https://maxplank69420-svg.github.io/earth-loading-screen/)** · [How the feeds work](docs/feeds.md) · [Contributing](CONTRIBUTING.md)
+
+![Earth loading screen in dark mode](docs/screenshot.png)
+
+## Use it
+
+Open the [live site](https://maxplank69420-svg.github.io/earth-loading-screen/), move the window to a spare monitor, and choose **full screen**. The small links at the bottom control the slideshow.
+
+| Control               | What it does                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| **feed**              | Switch between Everything (random), Rabbit hole, and a searched Wikipedia category   |
+| **speed**             | Choose 5, 15, 30, 60, 90, 180, or 300 seconds; a custom interval; or manual playback |
+| **pause / next**      | Stay with a picture or move on                                                       |
+| **history**           | Search, save, revisit, export, and import pictures you've seen                       |
+| **dark / light mode** | Change the theme; your choice is remembered                                          |
+| **settings**          | Toggle online discovery and optional slow image movement                             |
+
+The QR code and caption link open the original Wikipedia article. **Space** pauses, **→** advances, **H** opens history, and **F** toggles full screen. Speed, feed, theme, and history stay in this browser.
+
+## Feeds
+
+**Everything (random)** samples Wikipedia's random-article API, then keeps entries with a usable picture and caption. It does **not** use most-read, trending, featured, or celebrity feeds. Random selection can still put similar subjects together; illustrated articles are a subset of Wikipedia, not a statistically uniform sample of everything people know.
+
+**Rabbit hole** follows actual outgoing article links for up to three pictures, then starts somewhere random. It shares the same no-repeat record.
+
+**Category** searches Wikipedia's live category names. Type a subject, choose a matching category, and explore its articles and subcategories. No topic names are hardcoded. This follows Wikipedia's taxonomy, which can overlap, contain surprises, or have no category matching your exact phrase. It never silently substitutes unrelated random pictures when a category is empty or offline.
+
+See [feed selection and its limits](docs/feeds.md) for the implementation details.
 
 ## Run locally
 
-Install Python 3 if needed, then run from this folder:
+Requires **Python 3**. No npm install, build step, API keys, or backend account.
 
 ```sh
+git clone https://github.com/maxplank69420-svg/earth-loading-screen.git
+cd earth-loading-screen
 python3 serve.py
 ```
 
-On Windows: `py serve.py`. Open **http://127.0.0.1:8000**, move the window to your spare monitor, and click **full screen**. To choose a port: `python3 serve.py --port 8080`.
+Open **http://127.0.0.1:8000**. On Windows, use `py serve.py`. To choose another port: `python3 serve.py --port 8080`.
 
-Any static server also works: serve the `dist/` directory. Opening `index.html` directly as a file will not work because the browser needs to fetch `stories.json` over HTTP.
+You can also download the repository ZIP and run the same launcher. Any static web server can serve `dist/`. Opening `index.html` directly as a file won't work because the browser must fetch JSON over HTTP.
 
-The bundled local pictures work without an internet connection. Finding new articles and loading additional Wikimedia images requires internet. The collection waits when exhausted instead of looping.
+The bundled local pictures provide a small offline fallback in Random mode. Finding new articles, category browsing, rabbit holes, and remote images need internet. An exhausted collection waits instead of looping.
 
-## Publish on GitHub Pages
+## Keep your history when moving hosts
 
-1. Create an empty GitHub repository (for example `earth-loading-screen`) and upload this folder's contents, including `.github/workflows/pages.yml`. Use `main` as the branch.
-2. In the repository, go to **Settings → Pages → Build and deployment → Source**, and choose **GitHub Actions**.
-3. Open **Actions → Publish to GitHub Pages → Run workflow**. Future pushes to `main` deploy automatically.
-4. The deployment provides your Pages URL. Relative asset paths support both `username.github.io` and `username.github.io/repository/`.
+History belongs to each browser origin. GitHub Pages and localhost have separate records.
 
-The workflow uses GitHub's Pages actions, documented at https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages . It uploads `dist/` directly; there is no build step. GitHub Free supports Pages for public repositories. No ChatGPT login or Sites service is used by this portable project.
+1. On the old host, choose **history → Download history**.
+2. On the new host, choose **history → Import history** and select the JSON file.
 
-## Controls
+This restores the trail, saved pictures, and the seen record. A new host may show its first picture before you import. Clearing browser data clears the record. If storage is blocked or full, Settings explains the session-only limit. No history is sent to a server by this app.
 
-Use the little links at the bottom: pause, next, history, dark/light mode, settings, full screen.
+## Host your own copy
 
-Keyboard: **Space** pauses; **→** skips; **H** opens history; **F** toggles full screen. Settings controls timing and optional photograph movement.
+The repository includes [a GitHub Pages workflow](.github/workflows/pages.yml). In your copy, choose **Settings → Pages → Source → GitHub Actions**, then run **Publish to GitHub Pages**. Pushes to `main` deploy automatically after tests pass. All app paths are relative, so repository subpaths work.
 
-## Move your history to a different host
+The production site is static. It makes direct browser requests to Wikipedia and Wikimedia; there is no ChatGPT or Sites runtime dependency.
 
-Browser history belongs to each origin. A new GitHub Pages URL or local server starts with a separate record. Before switching, open **history → Download history** on the old site. On the new one, choose **history → Import history** and select that JSON file. This restores the trail, saved pictures, and the seen record so future playback skips them. The first picture at a new origin may be displayed before you import.
+## Development
 
-Clearing browser data clears the record. If storage is blocked or full, Settings explains that tracking lasts only for the current session. Download history to keep a backup.
+The application is ordinary HTML, CSS, and JavaScript. Node.js 22+ is needed only for tests:
+
+```sh
+node --test tests/*.cjs
+```
+
+- `dist/app.js` — display, controls, persistence, and playback
+- `dist/discovery.js` — Wikipedia API, category traversal, randomization, and history validation
+- `dist/style.css` — the existing plain light/dark presentation
+- `dist/stories.json` and `dist/assets/` — offline collection and vendored QR generator
+- `tests/` — deterministic feed, playback, migration, and request-race checks
+- `serve.py` — dependency-free local HTTP launcher
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project's scope and checks.
 
 ## Sources and licenses
 
-Captions come from Wikipedia summaries (CC BY-SA); each caption links to its article, author history, and source details. Pictures come from Wikimedia Commons, with individual licenses and attribution accessible through each article's image page. Cached pictures preserve their original source URLs in `dist/stories.json`. The app's original HTML, CSS, JavaScript, and helper code are MIT licensed (see `LICENSE`); that license does not replace the separate licenses for Wikipedia text or Wikimedia pictures.
+Captions are from [Wikipedia](https://en.wikipedia.org/) under [CC BY-SA](https://en.wikipedia.org/wiki/Wikipedia:Text_of_the_Creative_Commons_Attribution-ShareAlike_4.0_International_License). Article links provide authorship and revision history. Images have individual Wikimedia licenses: follow **Image & credits**, then the article's image, for its attribution and license. Cached pictures retain their original source URLs in `dist/stories.json`; [bundled image credits](docs/IMAGE_CREDITS.md) list the artists and individual licenses.
 
-The QR generator is vendored locally under the MIT license, included at `dist/assets/qrcode-LICENSE.txt`. Live discovery reads Wikipedia's featured feed and illustrated random articles. Source outages back off and leave the current picture on screen.
+Original application code is [MIT licensed](LICENSE). Wikipedia text and Wikimedia pictures retain their own licenses. The QR generator is by Kazuhiko Arase and includes its [MIT license](dist/assets/qrcode-LICENSE.txt).
